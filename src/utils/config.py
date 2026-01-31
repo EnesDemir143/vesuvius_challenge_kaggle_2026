@@ -1,0 +1,5 @@
+import dataclasses
+
+
+class Config:
+    

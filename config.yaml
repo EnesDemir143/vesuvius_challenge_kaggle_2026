@@ -1,0 +1,23 @@
+data:
+  # Raw data paths
+  raw_data_dir: "dataset/raw"
+  train_csv: "dataset/raw/train.csv"
+  test_csv: "dataset/raw/test.csv"
+  train_images: "dataset/raw/train_images"
+  train_labels: "dataset/raw/train_labels"
+  test_images: "dataset/raw/test_images"
+  
+  # Processed LMDB paths
+  processed_dir: "dataset/processed"
+  train_lmdb: "dataset/processed/train.lmdb"
+  test_lmdb: "dataset/processed/test.lmdb"
+  
+  # Label encoding
+  label_encoding:
+    background: 0
+    foreground: 1
+    unlabeled: 2
+  
+  # Dataset split
+  val_ratio: 0.2
+  seed: 42
