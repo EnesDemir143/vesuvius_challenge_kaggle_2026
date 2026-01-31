@@ -1,0 +1,33 @@
+[project]
+name = "vesuvius-challenge-surface-detection"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "albumentations>=2.0.8",
+    "einops>=0.8.2",
+    "h5py>=3.15.1",
+    "imagecodecs>=2026.1.14",
+    "imageio>=2.37.2",
+    "ipykernel>=7.1.0",
+    "ipywidgets>=8.1.8",
+    "jupyter>=1.1.1",
+    "lmdb>=1.7.5",
+    "matplotlib>=3.10.8",
+    "monai>=1.5.2",
+    "numpy>=2.4.1",
+    "opencv-python>=4.13.0.90",
+    "pandas>=3.0.0",
+    "plotly>=6.5.2",
+    "scikit-image>=0.26.0",
+    "scikit-learn>=1.8.0",
+    "scipy>=1.17.0",
+    "seaborn>=0.13.2",
+    "tifffile>=2026.1.28",
+    "torch>=2.10.0",
+    "torchaudio>=2.10.0",
+    "torchvision>=0.25.0",
+    "tqdm>=4.67.2",
+    "zarr>=3.1.5",
+]
