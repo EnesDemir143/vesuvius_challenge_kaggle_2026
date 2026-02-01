@@ -15,6 +15,83 @@ import numpy as np
 import torch
 
 
+class CenterCropOrPad:
+    """
+    Center crop or pad volume to target size.
+    
+    If the volume is larger than target, center crop.
+    If the volume is smaller than target, zero-pad.
+    
+    Args:
+        target_size: Target size as (D, H, W) tuple or single int for cubic
+    """
+    
+    def __init__(self, target_size: Union[int, Tuple[int, int, int]] = 256):
+        if isinstance(target_size, int):
+            self.target_size = (target_size, target_size, target_size)
+        else:
+            self.target_size = target_size
+    
+    def __call__(
+        self, 
+        image: torch.Tensor, 
+        label: Optional[torch.Tensor] = None
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        """
+        Apply center crop or padding.
+        
+        Args:
+            image: (D, H, W) tensor
+            label: Optional (D, H, W) tensor
+            
+        Returns:
+            Cropped/padded image and optionally label
+        """
+        current_size = image.shape
+        target_d, target_h, target_w = self.target_size
+        
+        # Process each dimension
+        image = self._process_dim(image, 0, current_size[0], target_d)
+        image = self._process_dim(image, 1, image.shape[1], target_h)
+        image = self._process_dim(image, 2, image.shape[2], target_w)
+        
+        if label is not None:
+            label = self._process_dim(label, 0, current_size[0], target_d, pad_value=2)
+            label = self._process_dim(label, 1, label.shape[1], target_h, pad_value=2)
+            label = self._process_dim(label, 2, label.shape[2], target_w, pad_value=2)
+            return image, label
+        
+        return image
+    
+    def _process_dim(
+        self, 
+        tensor: torch.Tensor, 
+        dim: int, 
+        current: int, 
+        target: int,
+        pad_value: float = 0
+    ) -> torch.Tensor:
+        """Process a single dimension: crop if larger, pad if smaller."""
+        if current == target:
+            return tensor
+        elif current > target:
+            # Center crop
+            start = (current - target) // 2
+            indices = [slice(None)] * 3
+            indices[dim] = slice(start, start + target)
+            return tensor[tuple(indices)]
+        else:
+            # Zero pad
+            pad_before = (target - current) // 2
+            pad_after = target - current - pad_before
+            pad_list = [0, 0, 0, 0, 0, 0]  # (w_before, w_after, h_before, h_after, d_before, d_after)
+            # torch.nn.functional.pad uses reverse order
+            pad_idx = (2 - dim) * 2
+            pad_list[pad_idx] = pad_before
+            pad_list[pad_idx + 1] = pad_after
+            return torch.nn.functional.pad(tensor, pad_list, value=pad_value)
+
+
 class ZJitter:
     """
     Z-axis jitter: randomly shift layers along Z-axis.
@@ -245,13 +322,14 @@ class AugmentationPipeline:
     """
     Complete augmentation pipeline for training and validation.
     
-    Training: ZJitter → BasicAugs → Normalize
-    Validation: Normalize only
+    Training: CenterCropOrPad → ZJitter → BasicAugs → Normalize
+    Validation: CenterCropOrPad → Normalize
     
     Note: PipMix is batch-level and should be applied separately in training loop.
     
     Args:
         mode: 'train' or 'val'
+        target_size: Target volume size (default 256)
         z_jitter_range: Max Z-axis shift
         stats_path: Path to mean_std.npy
         mean: Manual mean value (if stats_path not provided)
@@ -261,6 +339,7 @@ class AugmentationPipeline:
     def __init__(
         self,
         mode: str = 'train',
+        target_size: Union[int, Tuple[int, int, int]] = 256,
         z_jitter_range: int = 5,
         stats_path: Optional[Union[str, Path]] = None,
         mean: Optional[float] = None,
@@ -269,6 +348,7 @@ class AugmentationPipeline:
         self.mode = mode
         
         # Initialize transforms
+        self.crop_or_pad = CenterCropOrPad(target_size=target_size)
         self.z_jitter = ZJitter(jitter_range=z_jitter_range) if mode == 'train' else None
         self.basic_augs = BasicAugs() if mode == 'train' else None
         self.normalize = Normalize(mean=mean, std=std, stats_path=stats_path)
@@ -288,6 +368,12 @@ class AugmentationPipeline:
         Returns:
             Augmented/normalized image and optionally label
         """
+        # Step 0: Center crop or pad to target size (always applied)
+        if label is not None:
+            image, label = self.crop_or_pad(image, label)
+        else:
+            image = self.crop_or_pad(image)
+        
         if self.mode == 'train':
             # Step 1: Z-Jitter
             if label is not None:
@@ -311,22 +397,26 @@ class AugmentationPipeline:
 
 def get_train_transforms(
     stats_path: Optional[Union[str, Path]] = None,
-    z_jitter_range: int = 5
+    z_jitter_range: int = 5,
+    target_size: Union[int, Tuple[int, int, int]] = 256
 ) -> AugmentationPipeline:
     """Get training augmentation pipeline."""
     return AugmentationPipeline(
         mode='train',
+        target_size=target_size,
         z_jitter_range=z_jitter_range,
         stats_path=stats_path
     )
 
 
 def get_val_transforms(
-    stats_path: Optional[Union[str, Path]] = None
+    stats_path: Optional[Union[str, Path]] = None,
+    target_size: Union[int, Tuple[int, int, int]] = 256
 ) -> AugmentationPipeline:
     """Get validation augmentation pipeline (normalize only)."""
     return AugmentationPipeline(
         mode='val',
+        target_size=target_size,
         stats_path=stats_path
     )
 

@@ -8,6 +8,7 @@ import lmdb
 import numpy as np
 import pandas as pd
 import tifffile
+from scipy.ndimage import zoom
 from tqdm import tqdm
 
 
@@ -42,9 +43,20 @@ def find_volume_files(
 def estimate_lmdb_size(
     df: pd.DataFrame,
     image_dir: Path,
+    target_size: Optional[Tuple[int, int, int]] = None,
     sample_count: int = 5
 ) -> int:
-    """Estimate LMDB map size based on sample files."""
+    """Estimate LMDB map size based on target size or sample files."""
+    if target_size is not None:
+        # Calculate based on target size (much more accurate)
+        target_bytes = target_size[0] * target_size[1] * target_size[2]  # uint8
+        # Image + label + metadata overhead (~2.2x)
+        per_volume = target_bytes * 2.2
+        # Total + 30% overhead for LMDB metadata
+        estimated_size = int(per_volume * len(df) * 1.3)
+        return max(estimated_size, 100 * 1024 * 1024)  # At least 100MB
+    
+    # Fallback: sample-based estimation for no-resize mode
     sample_ids = df['id'].head(min(sample_count, len(df))).tolist()
     total_size = 0
     valid_samples = 0
@@ -73,7 +85,8 @@ def convert_to_lmdb(
     label_dir: Optional[Path],
     output_path: Path,
     overwrite: bool = False,
-    max_samples: Optional[int] = None
+    max_samples: Optional[int] = None,
+    target_size: Optional[Tuple[int, int, int]] = (256, 256, 256)
 ) -> Dict:
     # Handle existing LMDB
     if output_path.exists():
@@ -96,7 +109,7 @@ def convert_to_lmdb(
         print(f"Limiting to {max_samples} samples for testing")
     
     # Estimate map size
-    map_size = estimate_lmdb_size(df, image_dir)
+    map_size = estimate_lmdb_size(df, image_dir, target_size=target_size)
     print(f"Estimated LMDB size: {map_size / (1024**3):.2f} GB")
     
     start_time = time.time()
@@ -135,6 +148,12 @@ def convert_to_lmdb(
             # Load image volume
             image = tifffile.imread(image_path)
             
+            # Resize to target size if specified
+            if target_size is not None and image.shape != target_size:
+                zoom_factors = tuple(t / s for t, s in zip(target_size, image.shape))
+                image = zoom(image, zoom_factors, order=1)  # Trilinear interpolation
+                image = image.astype(np.uint8)  # Ensure uint8 after interpolation
+            
             # Store image data
             txn.put(f"{vol_id}_image".encode(), image.tobytes())
             txn.put(
@@ -152,6 +171,12 @@ def convert_to_lmdb(
             
             if has_label:
                 label = tifffile.imread(label_path)
+                
+                # Resize label to target size (use nearest neighbor to preserve discrete values)
+                if target_size is not None and label.shape != target_size:
+                    zoom_factors = tuple(t / s for t, s in zip(target_size, label.shape))
+                    label = zoom(label, zoom_factors, order=0)  # Nearest neighbor
+                
                 txn.put(f"{vol_id}_label".encode(), label.tobytes())
                 txn.put(
                     f"{vol_id}_label_shape".encode(),
@@ -237,6 +262,14 @@ def main():
         action="store_true",
         help="Skip label conversion (for test set)"
     )
+    parser.add_argument(
+        "--target-size",
+        type=int,
+        nargs=3,
+        default=[256, 256, 256],
+        metavar=("D", "H", "W"),
+        help="Target volume size (D H W). Set to 0 0 0 to disable resizing."
+    )
     
     args = parser.parse_args()
     
@@ -297,13 +330,21 @@ def main():
         print(f"Error: Image directory not found: {image_dir}")
         return
     
+    # Parse target size
+    target_size = tuple(args.target_size) if any(s > 0 for s in args.target_size) else None
+    if target_size:
+        print(f"Target size: {target_size}")
+    else:
+        print("Target size: None (no resizing)")
+    
     convert_to_lmdb(
         csv_path=csv_path,
         image_dir=image_dir,
         label_dir=label_dir,
         output_path=output_path,
         overwrite=args.overwrite,
-        max_samples=args.max_samples
+        max_samples=args.max_samples,
+        target_size=target_size
     )
     
     print("\nDone!")

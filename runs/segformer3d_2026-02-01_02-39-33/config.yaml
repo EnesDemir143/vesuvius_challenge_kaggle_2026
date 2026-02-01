@@ -1,0 +1,91 @@
+data:
+  raw_data_dir: dataset/raw
+  train_csv: dataset/raw/train.csv
+  test_csv: dataset/raw/test.csv
+  train_images: dataset/raw/train_images
+  train_labels: dataset/raw/train_labels
+  test_images: dataset/raw/test_images
+  processed_dir: dataset/processed
+  train_lmdb: dataset/processed/train.lmdb
+  test_lmdb: dataset/processed/test.lmdb
+  label_encoding:
+    background: 0
+    foreground: 1
+    unlabeled: 2
+  val_ratio: 0.2
+  seed: 42
+training:
+  model: segformer3d
+  in_channels: 1
+  out_channels: 2
+  epochs: 100
+  batch_size: 2
+  use_amp: true
+  grad_accum_steps: 1
+  clip_grad_norm: 1.0
+  finetune_mode: middle
+  lr_decay_rate: 0.75
+  freeze_encoder_ratio: 0.5
+  early_stopping_patience: 10
+  early_stopping_metric: competition_score
+  save_every_n_epochs: 5
+  save_probs_every_n_epochs: auto
+  keep_last_n_prob_epochs: 3
+  surface_dice_tau: 2.0
+  voi_alpha: 0.3
+  resume_from: null
+models:
+  unet:
+    optimizer: adamw
+    learning_rate: 0.0001
+    weight_decay: 1.0e-05
+    scheduler: cosine
+    warmup_epochs: 5
+    channels:
+    - 32
+    - 64
+    - 128
+    - 256
+    - 512
+    strides:
+    - 2
+    - 2
+    - 2
+    - 2
+    num_res_units: 2
+  segresnet:
+    optimizer: adamw
+    learning_rate: 0.0001
+    weight_decay: 1.0e-05
+    scheduler: cosine
+    warmup_epochs: 5
+    init_filters: 32
+    blocks_down:
+    - 1
+    - 2
+    - 2
+    - 4
+    blocks_up:
+    - 1
+    - 1
+    - 1
+  segformer3d:
+    optimizer: adamw
+    learning_rate: 5.0e-05
+    weight_decay: 0.01
+    scheduler: cosine
+    warmup_epochs: 10
+    encoder_name: mit_b2
+    lr_decay_rate: 0.65
+  swinunetr:
+    optimizer: adamw
+    learning_rate: 5.0e-05
+    weight_decay: 0.01
+    scheduler: cosine
+    warmup_epochs: 10
+    feature_size: 48
+    use_checkpoint: true
+    lr_decay_rate: 0.7
+augmentation:
+  z_jitter_range: 5
+  stats_path: dataset/processed/mean_std.npy

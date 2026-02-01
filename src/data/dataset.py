@@ -125,7 +125,10 @@ class VesuviusLMDBDataset(Dataset):
             )
             image_dtype = txn.get(f"{vol_id}_image_dtype".encode()).decode()
             
-            image = np.frombuffer(image_bytes, dtype=image_dtype).reshape(image_shape)
+            # Use ascontiguousarray instead of copy() for memory efficiency
+            image = np.ascontiguousarray(
+                np.frombuffer(image_bytes, dtype=image_dtype).reshape(image_shape)
+            )
             
             # Check if label exists
             has_label = txn.get(f"{vol_id}_has_label".encode()).decode() == "True"
@@ -138,15 +141,20 @@ class VesuviusLMDBDataset(Dataset):
                 )
                 label_dtype = txn.get(f"{vol_id}_label_dtype".encode()).decode()
                 
-                label = np.frombuffer(label_bytes, dtype=label_dtype).reshape(label_shape)
+                # Use ascontiguousarray instead of copy() for memory efficiency
+                label = np.ascontiguousarray(
+                    np.frombuffer(label_bytes, dtype=label_dtype).reshape(label_shape)
+                )
             
             # Load metadata
             scroll_id = int(txn.get(f"{vol_id}_scroll_id".encode()).decode())
         
-        # Convert to tensors
-        image = torch.from_numpy(image.copy()).float()
+        # Convert to tensors - no copy needed since ascontiguousarray already made a copy
+        # Use float16 for images (saves 50% RAM, compatible with AMP)
+        # Use int8 for labels (labels are only 0, 1, 2 - saves ~8x RAM vs int64)
+        image = torch.from_numpy(image).to(torch.float16)
         if label is not None:
-            label = torch.from_numpy(label.copy()).long()
+            label = torch.from_numpy(label).to(torch.int8)
         
         # Apply transforms
         if self.transform is not None:
